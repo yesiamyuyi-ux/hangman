@@ -1,431 +1,728 @@
-import React, { useState, useEffect } from 'react';
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>吊死人猜字連線對戰 - 旗艦版</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Firebase SDK Compat -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body class="bg-amber-50 text-slate-800 min-h-screen">
+  <div id="root"></div>
 
-// ==========================================
-// 1. 工具函數：注音轉換與英文空格處理
-// ==========================================
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-// 注音聲調符號對照表
-const TONE_MARKS = {
-  1: '',     // 一聲（通常不標記，或留空）
-  2: 'ˊ',    // 二聲
-  3: 'ˇ',    // 三聲
-  4: 'ˋ',    // 四聲
-  5: '˙'     // 輕聲
-};
+    const firebaseConfig = {
+      apiKey: "AIzaSyB9QjUN5oTSEkOVd5p-6rJfZEoAFc-ns38",
+      authDomain: "hangman-ce85a.firebaseapp.com",
+      databaseURL: "https://hangman-ce85a-default-rtdb.firebaseio.com",
+      projectId: "hangman-ce85a",
+      storageBucket: "hangman-ce85a.firebasestorage.app",
+      messagingSenderId: "473298738214",
+      appId: "1:473298738214:web:f57f31f19dce05ee579ae7"
+    };
 
-/**
- * 國字轉注音輔助函數（專案中可搭配 pinyin-pro 或本地字典庫）
- * 示範格式：輸入 "蘋果" -> 回傳 ['ㄆㄧㄥˊ', 'ㄍㄨㄛˇ']
- */
-const convertToZhuyin = (text) => {
-  // 此處示範基礎字典映射邏輯（實際部署建議引入 `pinyin-pro` 的 zhuyin 模式）
-  // 範例邏輯將每個字拆解為包含聲調的注音符號陣列
-  const mockZhuyinDict = {
-    '苹': 'ㄆㄧㄥˊ',
-    '果': 'ㄍㄨㄛˇ',
-    '猫': 'ㄇㄠ',
-    '狗': 'ㄍㄡˇ',
-    '冰': 'ㄅㄧㄥ',
-    '壺': 'ㄏㄨˊ'
-  };
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
 
-  return text.split('').map(char => mockZhuyinDict[char] || char);
-};
+    const ALPHABET_EN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    // 加入四個聲調符號 (輕聲、二聲、三聲、四聲)。一聲通常不標記，直接留空即可。
+    const ZHUYIN_LIST = ['ㄅ','ㄆ','ㄇ','ㄈ','ㄉ','ㄊ','ㄋ','ㄌ','ㄍ','ㄎ','ㄏ','ㄐ','ㄑ','ㄒ','ㄓ','ㄔ','ㄕ','ㄖ','ㄗ','ㄘ','ㄙ','ㄧ','ㄨ','ㄩ','ㄚ','ㄛ','ㄜ','ㄝ','ㄞ','ㄟ','ㄠ','ㄡ','ㄢ','ㄣ','ㄤ','ㄥ','ㄦ','˙','ˊ','ˇ','ˋ'];
+    const MAX_WRONG = 6;
 
-// ==========================================
-// 2. 主組件：遊戲與題庫合集管理系統
-// ==========================================
-export default function WordGuessGame() {
-  // ---------- 題庫合集 State (支援 CRUD & LocalStorage) ----------
-  const [collections, setCollections] = useState(() => {
-    const saved = localStorage.getItem('custom_collections');
-    return saved ? JSON.parse(saved) : [
+    // 簡易內建國字轉注音字典 (未在字典內的字，出題者可手動補齊注音)
+    const ZHUYIN_DICT = {
+      '柑': 'ㄍㄢ', '仔': 'ㄗㄞˇ', '店': 'ㄉㄧㄢˋ', '推': 'ㄊㄨㄟ', '冰': 'ㄅㄧㄥ', '壺': 'ㄏㄨˊ',
+      '珍': 'ㄓㄣ', '珠': 'ㄓㄨ', '奶': 'ㄋㄞˇ', '茶': 'ㄔㄚˊ', '貓': 'ㄇㄠ', '狗': 'ㄍㄡˇ',
+      '翻': 'ㄈㄢ', '樂': 'ㄌㄜˋ', '蘋': 'ㄆㄧㄥˊ', '果': 'ㄍㄨㄛˇ', '紅': 'ㄏㄨㄥˊ', '茶': 'ㄔㄚˊ'
+    };
+
+    function autoConvertZhuyin(text) {
+      return text.split('').map(c => ZHUYIN_DICT[c] || c).join(' ');
+    }
+
+    // 初始預設題庫
+    const DEFAULT_COLLECTIONS = [
       {
-        id: 'default-1',
-        name: '日常水果與動物',
-        type: 'zhuyin', // 'zhuyin' (國字轉注音) 或 'english' (英文片語)
+        id: 'c1', name: '懷舊與日常', lang: 'ZH',
         words: [
-          { text: '蘋果', hint: '紅色的水果' },
-          { text: '小貓', hint: '會喵喵叫的寵物' }
+          { text: '柑仔店', target: 'ㄍㄢ ㄗㄞˇ ㄉㄧㄢˋ' },
+          { text: '推冰壺', target: 'ㄊㄨㄟ ㄅㄧㄥ ㄏㄨˊ' },
+          { text: '珍珠奶茶', target: 'ㄓㄣ ㄓㄨ ㄋㄞˇ ㄔㄚˊ' },
+          { text: '小貓', target: 'ㄒㄧㄠˇ ㄇㄠ' }
         ]
       },
       {
-        id: 'default-2',
-        name: '常用英文片語',
-        type: 'english',
+        id: 'c2', name: 'Daily Phrases', lang: 'EN',
         words: [
-          { text: 'APPLE PIE', hint: '美式經典甜點' },
-          { text: 'GOOD MORNING', hint: '早晨打招呼' }
+          { text: 'APPLE PIE', target: 'APPLE PIE' },
+          { text: 'ICE CREAM', target: 'ICE CREAM' },
+          { text: 'GOOD MORNING', target: 'GOOD MORNING' }
         ]
       }
     ];
-  });
 
-  // 選擇的合集與遊戲狀態
-  const [selectedCollectionId, setSelectedCollectionId] = useState('');
-  const [currentWordIndex, setCurrentWordIndex] = useState(0);
-  const [guessedLetters, setGuessedLetters] = useState(new Set());
-  const [gameMode, setGameMode] = useState('menu'); // 'menu' | 'playing' | 'manage'
+    function HangmanGame() {
+      const [screen, setScreen] = useState('HOME');
+      
+      // ─── 單人模式：題庫與遊戲 ───
+      const [collections, setCollections] = useState(() => {
+        const saved = localStorage.getItem('hangman_collections_v2');
+        return saved ? JSON.parse(saved) : DEFAULT_COLLECTIONS;
+      });
+      const [spCurrentCol, setSpCurrentCol] = useState(null);
+      const [spWordIndex, setSpWordIndex] = useState(0);
+      const [spWordData, setSpWordData] = useState(null); // { text, target }
+      const [spGuessed, setSpGuessed] = useState(new Set());
+      const [spWrong, setSpWrong] = useState(0);
 
-  // ---------- 題庫編輯 Modal State ----------
-  const [editingCollection, setEditingCollection] = useState(null);
-  const [inputWordCount, setInputWordCount] = useState(3); // 欲輸入的單字數量
+      // 單人模式：合集管理
+      const [editingCol, setEditingCol] = useState(null); // null 表示不在編輯狀態
+      const [wordCountInput, setWordCountInput] = useState(3);
 
-  useEffect(() => {
-    localStorage.setItem('custom_collections', JSON.stringify(collections));
-  }, [collections]);
+      // ─── 多人模式 ───
+      const [roomIdInput, setRoomIdInput] = useState('');
+      const [playerNameInput, setPlayerNameInput] = useState('');
+      const [roomId, setRoomId] = useState('');
+      const [playerId, setPlayerId] = useState('');
+      const [playerName, setPlayerName] = useState('');
+      const [roomData, setRoomData] = useState(null);
+      const [langMode, setLangMode] = useState('ZH'); 
+      
+      const [mpWordText, setMpWordText] = useState(''); // 出題者輸入的國字/英文
+      const [mpWordTarget, setMpWordTarget] = useState(''); // 實際要猜的注音/英文
+      
+      const [timeLeft, setTimeLeft] = useState(0);
+      const [showReview, setShowReview] = useState(false);
 
-  // ---------- 題庫合集 CRUD 操作 ----------
-  const handleCreateCollection = () => {
-    const newCol = {
-      id: Date.now().toString(),
-      name: '新題庫合集',
-      type: 'zhuyin',
-      words: Array.from({ length: inputWordCount }, () => ({ text: '', hint: '' }))
-    };
-    setEditingCollection(newCol);
-  };
+      const canvasRef = useRef(null);
 
-  const handleSaveCollection = () => {
-    if (!editingCollection.name.trim()) return alert('請輸入合集名稱');
-    
-    // 過濾空字串
-    const validWords = editingCollection.words.filter(w => w.text.trim() !== '');
-    if (validWords.length === 0) return alert('合集內至少需有一組題目');
+      // 儲存題庫到 LocalStorage
+      useEffect(() => {
+        localStorage.setItem('hangman_collections_v2', JSON.stringify(collections));
+      }, [collections]);
 
-    const updated = { ...editingCollection, words: validWords };
-    
-    setCollections(prev => {
-      const exists = prev.find(c => c.id === updated.id);
-      if (exists) {
-        return prev.map(c => c.id === updated.id ? updated : c);
-      }
-      return [...prev, updated];
-    });
+      // 畫吊死人
+      const drawHangman = useCallback((wrongCount) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = '#374151'; ctx.lineWidth = 4; ctx.lineCap = 'round';
 
-    setEditingCollection(null);
-  };
+        ctx.beginPath();
+        ctx.moveTo(20, 180); ctx.lineTo(100, 180);
+        ctx.moveTo(40, 180); ctx.lineTo(40, 20);
+        ctx.lineTo(120, 20); ctx.lineTo(120, 40);
+        ctx.stroke();
 
-  const handleDeleteCollection = (id) => {
-    if (confirm('確定要刪除此題庫合集嗎？')) {
-      setCollections(prev => prev.filter(c => c.id !== id));
-    }
-  };
+        if (wrongCount >= 1) { ctx.beginPath(); ctx.arc(120, 55, 15, 0, Math.PI * 2); ctx.stroke(); }
+        if (wrongCount >= 2) { ctx.beginPath(); ctx.moveTo(120, 70); ctx.lineTo(120, 120); ctx.stroke(); }
+        if (wrongCount >= 3) { ctx.beginPath(); ctx.moveTo(120, 85); ctx.lineTo(95, 105); ctx.stroke(); }
+        if (wrongCount >= 4) { ctx.beginPath(); ctx.moveTo(120, 85); ctx.lineTo(145, 105); ctx.stroke(); }
+        if (wrongCount >= 5) { ctx.beginPath(); ctx.moveTo(120, 120); ctx.lineTo(95, 155); ctx.stroke(); }
+        if (wrongCount >= 6) { ctx.beginPath(); ctx.moveTo(120, 120); ctx.lineTo(145, 155); ctx.stroke(); }
+      }, []);
 
-  // ---------- 遊戲核心渲染邏輯 ----------
-  const currentCollection = collections.find(c => c.id === selectedCollectionId);
-  const currentTarget = currentCollection?.words[currentWordIndex];
+      useEffect(() => {
+        if (screen === 'SP_GAME') drawHangman(spWrong);
+        if (screen === 'MP_ROOM' && roomData && roomData.status === 'PLAYING') drawHangman(roomData.wrongCount || 0);
+      }, [spWrong, roomData, screen, drawHangman]);
 
-  // 渲染猜題框
-  const renderGuessDisplay = () => {
-    if (!currentTarget) return null;
-
-    if (currentCollection.type === 'zhuyin') {
-      // 國字題目轉成注音（含聲調）後顯示
-      const zhuyinList = convertToZhuyin(currentTarget.text);
-
-      return (
-        <div className="flex gap-4 justify-center my-6">
-          {zhuyinList.map((zhuyinChar, index) => {
-            const isGuessed = guessedLetters.has(zhuyinChar);
-            return (
-              <div key={index} className="flex flex-col items-center">
-                <div className="w-16 h-20 border-b-4 border-indigo-500 flex items-center justify-center text-2xl font-bold">
-                  {isGuessed ? zhuyinChar : ''}
-                </div>
-                <span className="text-xs text-gray-400 mt-1">第 {index + 1} 字</span>
-              </div>
-            );
-          })}
-        </div>
-      );
-    } 
-    
-    if (currentCollection.type === 'english') {
-      // 英文片語：允許空白格，空白格不計入底線
-      const letters = currentTarget.text.toUpperCase().split('');
-
-      return (
-        <div className="flex flex-wrap gap-2 justify-center my-6">
-          {letters.map((char, index) => {
-            if (char === ' ') {
-              // 空白格：直接空出一格，不顯示底線
-              return <div key={index} className="w-8 h-16" />;
+      // Firebase 即時資料監聽與解散防護
+      useEffect(() => {
+        if (!roomId) return;
+        const roomRef = firebase.database().ref('rooms/' + roomId);
+        const handleValue = (snapshot) => {
+          const data = snapshot.val();
+          if (data) {
+            setRoomData(data);
+          } else {
+            if (screen === 'MP_ROOM') {
+              alert('房間已被解散，將返回首頁。');
+              setScreen('HOME');
+              setRoomId('');
+              setRoomData(null);
             }
+          }
+        };
+        roomRef.on('value', handleValue);
+        return () => roomRef.off('value', handleValue);
+      }, [roomId, screen]);
 
-            const isGuessed = guessedLetters.has(char);
-            return (
-              <div 
-                key={index} 
-                className="w-12 h-16 border-b-4 border-indigo-500 flex items-center justify-center text-3xl font-bold uppercase"
-              >
-                {isGuessed ? char : ''}
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
-  };
-
-  // ==========================================
-  // 3. UI 畫面渲染
-  // ==========================================
-  return (
-    <div className="max-w-4xl mx-auto p-6 bg-slate-50 min-h-screen font-sans">
-      <header className="text-center mb-8">
-        <h1 className="text-3xl font-extrabold text-slate-800">注音與英文單字猜題遊戲</h1>
-      </header>
-
-      {/* 主選單 / 模式選擇 */}
-      {gameMode === 'menu' && (
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-xl shadow-md">
-            <h2 className="text-xl font-bold mb-4 text-slate-700">單人模式：選擇題庫合集</h2>
+      // 倒數計時器
+      useEffect(() => {
+        if (roomData?.status === 'SETTING' && roomData.settingDeadline) {
+          const interval = setInterval(() => {
+            const now = Date.now();
+            const remain = Math.max(0, Math.ceil((roomData.settingDeadline - now) / 1000));
+            setTimeLeft(remain);
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              {collections.map(col => (
-                <div 
-                  key={col.id}
-                  onClick={() => setSelectedCollectionId(col.id)}
-                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                    selectedCollectionId === col.id 
-                      ? 'border-indigo-600 bg-indigo-50' 
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-lg text-slate-800">{col.name}</span>
-                    <span className="text-xs px-2 py-1 bg-slate-200 text-slate-600 rounded">
-                      {col.type === 'zhuyin' ? '國字轉注音' : '英文片語'}
-                    </span>
+            if (remain === 0 && playerId === roomData.ownerId) {
+              const nextIdx = (roomData.setterIndex + 1) % (roomData.playerOrder?.length || 1);
+              firebase.database().ref('rooms/' + roomId).update({
+                setterIndex: nextIdx,
+                settingDeadline: Date.now() + (roomData.settings.timeLimit * 1000)
+              });
+            }
+          }, 500);
+          return () => clearInterval(interval);
+        }
+      }, [roomData?.status, roomData?.settingDeadline, roomData?.setterIndex, roomData?.ownerId, roomData?.playerOrder, playerId, roomId]);
+
+
+      // ─── 單人題庫管理邏輯 ───
+      const openCreateCol = () => {
+        setEditingCol({
+          id: Date.now().toString(),
+          name: '新題庫合集',
+          lang: 'ZH',
+          words: Array.from({ length: wordCountInput }, () => ({ text: '', target: '' }))
+        });
+        setScreen('SP_MANAGE');
+      };
+
+      const handleSaveCol = () => {
+        if (!editingCol.name.trim()) return alert('請輸入合集名稱');
+        const validWords = editingCol.words.filter(w => w.text.trim() !== '' && w.target.trim() !== '');
+        if (validWords.length === 0) return alert('請至少填寫一組完整的題目與解答');
+        
+        const newCol = { ...editingCol, words: validWords };
+        setCollections(prev => {
+          const exists = prev.find(c => c.id === newCol.id);
+          if (exists) return prev.map(c => c.id === newCol.id ? newCol : c);
+          return [...prev, newCol];
+        });
+        setScreen('SP_MENU');
+      };
+
+      const handleDeleteCol = (id) => {
+        if (window.confirm('確定要刪除此題庫合集嗎？')) {
+          setCollections(prev => prev.filter(c => c.id !== id));
+        }
+      };
+
+      // ─── 單人遊戲邏輯 ───
+      const startSpGame = (col) => {
+        setSpCurrentCol(col);
+        setSpWordIndex(0);
+        setSpWordData(col.words[0]);
+        setSpGuessed(new Set());
+        setSpWrong(0);
+        setScreen('SP_GAME');
+      };
+
+      const nextSpWord = () => {
+        if (spWordIndex + 1 < spCurrentCol.words.length) {
+          const nextIdx = spWordIndex + 1;
+          setSpWordIndex(nextIdx);
+          setSpWordData(spCurrentCol.words[nextIdx]);
+          setSpGuessed(new Set());
+          setSpWrong(0);
+        } else {
+          alert('恭喜完成此合集所有題目！');
+          setScreen('SP_MENU');
+        }
+      };
+
+      const handleSpGuess = (char) => {
+        if (spGuessed.has(char) || spWrong >= MAX_WRONG) return;
+        const newGuessed = new Set(spGuessed).add(char);
+        setSpGuessed(newGuessed);
+        
+        if (!spWordData.target.includes(char)) {
+          setSpWrong(prev => prev + 1);
+        }
+      };
+
+      // 渲染單字框 (支援空白格顯示)
+      const renderWordSpaces = (targetStr, guessedSet, isGameOver) => {
+        return targetStr.split('').map((char, idx) => {
+          if (char === ' ') {
+            // 空白格：不顯示底線，作為片語或注音的斷詞
+            return <div key={idx} className="w-3 sm:w-6 h-11" />;
+          }
+          const isGuessed = guessedSet.has(char) || isGameOver;
+          return (
+            <span key={idx} className="w-8 h-11 sm:w-10 sm:h-12 border-b-4 border-slate-700 text-xl sm:text-2xl font-bold flex items-center justify-center mb-2">
+              {isGuessed ? char : ''}
+            </span>
+          );
+        });
+      };
+
+
+      // ─── 多人遊戲邏輯 ───
+      const generatePlayerId = () => 'p_' + Math.random().toString(36).substring(2, 9);
+
+      const handleCreateRoom = () => {
+        if (!roomIdInput.trim() || !playerNameInput.trim()) return alert('請輸入房間號碼與您的暱稱！');
+        const pId = generatePlayerId();
+        const rId = roomIdInput.trim();
+        const roomRef = firebase.database().ref('rooms/' + rId);
+
+        roomRef.get().then((snapshot) => {
+          if (snapshot.exists()) {
+            alert('此房間號碼已被使用，請更換一個數字或點擊「加入房間」！');
+          } else {
+            setPlayerId(pId);
+            setPlayerName(playerNameInput.trim());
+            setRoomId(rId);
+            roomRef.set({
+              id: rId,
+              status: 'LOBBY',
+              ownerId: pId,
+              setterIndex: 0,
+              playerOrder: [pId],
+              langMode: langMode,
+              wordText: '',
+              wordTarget: '',
+              guessed: [],
+              wrongCount: 0,
+              wordHistory: [],
+              settings: { timeLimit: 30, winScore: 5 },
+              players: {
+                [pId]: { name: playerNameInput.trim(), isReady: true, score: 0 }
+              }
+            }).then(() => {
+              setScreen('MP_ROOM');
+              setShowReview(false);
+            });
+          }
+        });
+      };
+
+      const handleJoinRoom = () => {
+        if (!roomIdInput.trim() || !playerNameInput.trim()) return alert('請輸入房間號碼與您的暱稱！');
+        const pId = generatePlayerId();
+        const rId = roomIdInput.trim();
+        const roomRef = firebase.database().ref('rooms/' + rId);
+
+        roomRef.get().then((snapshot) => {
+          if (!snapshot.exists()) {
+            alert('找不到此房間！');
+          } else {
+            setPlayerId(pId);
+            setPlayerName(playerNameInput.trim());
+            setRoomId(rId);
+            
+            const currentOrder = snapshot.val().playerOrder || [];
+            const updates = {};
+            updates[`rooms/${rId}/players/${pId}`] = { name: playerNameInput.trim(), isReady: false, score: 0 };
+            updates[`rooms/${rId}/playerOrder`] = [...currentOrder, pId];
+            
+            firebase.database().ref().update(updates).then(() => {
+              setScreen('MP_ROOM');
+              setShowReview(false);
+            });
+          }
+        });
+      };
+
+      const handleDisbandRoom = () => {
+        if(window.confirm('確定要解散房間嗎？這將會清除所有連線與資料，釋出此房號。')) {
+          firebase.database().ref('rooms/' + roomId).remove(); 
+        }
+      };
+
+      const toggleReady = () => {
+        if (!roomData || !playerId) return;
+        const currentReady = roomData.players?.[playerId]?.isReady || false;
+        firebase.database().ref(`rooms/${roomId}/players/${playerId}`).update({ isReady: !currentReady });
+      };
+
+      const handleStartGame = () => {
+        firebase.database().ref('rooms/' + roomId).update({
+          status: 'SETTING',
+          setterIndex: 0,
+          settingDeadline: Date.now() + (roomData.settings.timeLimit * 1000),
+          wordHistory: [],
+          guessed: [],
+          wrongCount: 0
+        });
+        const scoreUpdates = {};
+        roomData.playerOrder.forEach(pid => {
+          scoreUpdates[`rooms/${roomId}/players/${pid}/score`] = 0;
+        });
+        firebase.database().ref().update(scoreUpdates);
+      };
+
+      // 多人出題提交
+      const handleSubmitMpWord = () => {
+        if (!mpWordText.trim() || !mpWordTarget.trim()) return alert('請完整輸入題目與解答格式！');
+        firebase.database().ref('rooms/' + roomId).update({
+          wordText: mpWordText.trim(),
+          wordTarget: mpWordTarget.trim().toUpperCase(),
+          status: 'PLAYING',
+          guessed: [],
+          wrongCount: 0
+        });
+        setMpWordText('');
+        setMpWordTarget('');
+      };
+
+      // 多人猜字邏輯
+      const handleMpGuess = (char) => {
+        if (!roomData || roomData.guessed?.includes(char) || roomData.wrongCount >= MAX_WRONG) return;
+        
+        const currentSetterId = roomData.playerOrder[roomData.setterIndex];
+        if (playerId === currentSetterId) return; 
+
+        const newGuessed = [...(roomData.guessed || []), char];
+        const isWrong = !roomData.wordTarget.includes(char);
+        const newWrongCount = isWrong ? (roomData.wrongCount + 1) : roomData.wrongCount;
+
+        // 判斷勝利：所有非空白字元皆被猜中
+        const isWordComplete = roomData.wordTarget.split('').every(c => c === ' ' || newGuessed.includes(c));
+        const isHanged = newWrongCount >= MAX_WRONG;
+
+        let updates = { guessed: newGuessed, wrongCount: newWrongCount };
+
+        if (isWordComplete || isHanged) {
+          const winnerId = isWordComplete ? playerId : currentSetterId;
+          const newScore = (roomData.players[winnerId]?.score || 0) + 1;
+          
+          updates[`players/${winnerId}/score`] = newScore;
+          
+          const historyItem = {
+            word: roomData.wordText,
+            target: roomData.wordTarget,
+            setter: roomData.players[currentSetterId]?.name,
+            winner: roomData.players[winnerId]?.name,
+            status: isWordComplete ? '被猜中' : '吊死成功'
+          };
+          updates.wordHistory = [...(roomData.wordHistory || []), historyItem];
+
+          if (newScore >= roomData.settings.winScore) {
+            updates.status = 'GAME_OVER';
+          } else {
+            updates.status = 'SETTING';
+            updates.setterIndex = (roomData.setterIndex + 1) % roomData.playerOrder.length;
+            updates.settingDeadline = Date.now() + (roomData.settings.timeLimit * 1000);
+          }
+        }
+        firebase.database().ref('rooms/' + roomId).update(updates);
+      };
+
+      const keys = (screen === 'SP_GAME' ? spCurrentCol.lang : (roomData?.langMode || langMode)) === 'ZH' ? ZHUYIN_LIST : ALPHABET_EN;
+      const allPlayersReady = useMemo(() => {
+        if (!roomData || !roomData.players) return false;
+        return Object.values(roomData.players).every(p => p.isReady);
+      }, [roomData]);
+
+      return (
+        <div className="flex flex-col items-center justify-start p-4 max-w-2xl mx-auto">
+          <header className="w-full text-center py-4 border-b-2 border-dashed border-amber-300 mb-6">
+            <h1 className="text-3xl font-extrabold text-amber-900 mb-2">✏️ 吊死人猜字連線對戰</h1>
+            <p className="text-xs text-amber-700 font-bold tracking-widest">中英雙語・空白片語・注音聲調版</p>
+          </header>
+
+          {/* 1. 首頁 */}
+          {screen === 'HOME' && (
+            <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-6">
+              <button onClick={() => setScreen('SP_MENU')} className="w-full py-5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-md text-xl">🎮 單人練習 (題庫合集)</button>
+              <button onClick={() => setScreen('MP_LOGIN')} className="w-full py-5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md text-xl">🌐 多人線上對戰</button>
+            </div>
+          )}
+
+          {/* 2. 單人題庫選單 */}
+          {screen === 'SP_MENU' && (
+            <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-6">
+              <div className="flex justify-between items-center mb-2">
+                <h2 className="text-xl font-bold text-slate-800">選擇題庫合集</h2>
+                <button onClick={() => setScreen('HOME')} className="text-sm text-slate-400">返回首頁</button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {collections.map(col => (
+                  <div key={col.id} className="p-4 border rounded-xl hover:border-amber-400 cursor-pointer transition relative group" onClick={() => startSpGame(col)}>
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="font-extrabold text-lg">{col.name}</span>
+                      <span className={`text-xs px-2 py-1 rounded font-bold ${col.lang === 'ZH' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {col.lang === 'ZH' ? '注音' : '英文'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-500">題目數量：{col.words.length} 題</p>
+                    
+                    <div className="absolute top-2 right-2 hidden group-hover:flex gap-2">
+                      <button onClick={(e) => { e.stopPropagation(); setEditingCol(col); setScreen('SP_MANAGE'); }} className="text-xs bg-slate-200 px-2 py-1 rounded hover:bg-slate-300">編輯</button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteCol(col.id); }} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200">刪除</button>
+                    </div>
                   </div>
-                  <p className="text-sm text-slate-500 mt-2">題目數量：{col.words.length} 題</p>
-                </div>
-              ))}
+                ))}
+              </div>
+
+              <div className="border-t pt-4 flex gap-3 items-center">
+                <label className="text-sm font-bold text-slate-600">自訂題目數量：</label>
+                <input type="number" min="1" max="20" value={wordCountInput} onChange={e => setWordCountInput(parseInt(e.target.value)||1)} className="w-16 p-2 border rounded" />
+                <button onClick={openCreateCol} className="flex-1 py-2 bg-emerald-600 text-white font-bold rounded-lg">+ 建立新合集</button>
+              </div>
             </div>
+          )}
 
-            <div className="flex gap-4">
-              <button 
-                disabled={!selectedCollectionId}
-                onClick={() => { setGameMode('playing'); setGuessedLetters(new Set()); setCurrentWordIndex(0); }}
-                className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-lg disabled:opacity-50 hover:bg-indigo-700"
-              >
-                開始遊戲
-              </button>
-              <button 
-                onClick={() => setGameMode('manage')}
-                className="px-6 py-3 border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-100"
-              >
-                管理題庫合集
-              </button>
+          {/* 3. 單人題庫管理 (編輯/新增) */}
+          {screen === 'SP_MANAGE' && editingCol && (
+            <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-4">
+              <h2 className="text-lg font-bold text-slate-800">{editingCol.id === 'new' ? '新增合集' : '編輯合集'}</h2>
+              
+              <div className="flex gap-4">
+                <input type="text" placeholder="合集名稱" value={editingCol.name} onChange={e => setEditingCol({...editingCol, name: e.target.value})} className="flex-1 p-2 border rounded" />
+                <select value={editingCol.lang} onChange={e => setEditingCol({...editingCol, lang: e.target.value})} className="p-2 border rounded font-bold">
+                  <option value="ZH">注音模式 (輸入國字)</option>
+                  <option value="EN">英文模式 (支援片語空白)</option>
+                </select>
+              </div>
+
+              <div className="space-y-2 mt-4 max-h-96 overflow-y-auto pr-2">
+                {editingCol.words.map((w, i) => (
+                  <div key={i} className="flex gap-2 p-3 bg-slate-50 rounded border">
+                    <span className="font-bold text-slate-400 mt-2">{i+1}.</span>
+                    <div className="flex-1 space-y-2">
+                      <input 
+                        type="text" 
+                        placeholder={editingCol.lang === 'ZH' ? '輸入國字 (例: 珍珠奶茶)' : '輸入英文 (例: ICE CREAM)'} 
+                        value={w.text} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const newWords = [...editingCol.words];
+                          newWords[i].text = val;
+                          if(editingCol.lang === 'ZH') newWords[i].target = autoConvertZhuyin(val);
+                          else newWords[i].target = val.toUpperCase();
+                          setEditingCol({...editingCol, words: newWords});
+                        }} 
+                        className="w-full p-2 border rounded text-sm font-bold" 
+                      />
+                      <input 
+                        type="text" 
+                        placeholder={editingCol.lang === 'ZH' ? '注音轉換結果 (可手動修改/加上空白分詞)' : '解答目標 (同上)'} 
+                        value={w.target} 
+                        onChange={(e) => {
+                          const newWords = [...editingCol.words];
+                          newWords[i].target = e.target.value.toUpperCase();
+                          setEditingCol({...editingCol, words: newWords});
+                        }} 
+                        className="w-full p-2 border rounded text-sm bg-indigo-50 text-indigo-700" 
+                      />
+                    </div>
+                    <button onClick={() => {
+                      const newWords = editingCol.words.filter((_, idx) => idx !== i);
+                      setEditingCol({...editingCol, words: newWords});
+                    }} className="text-red-500 font-bold px-2">✕</button>
+                  </div>
+                ))}
+                <button onClick={() => setEditingCol({...editingCol, words: [...editingCol.words, {text:'', target:''}]})} className="text-sm text-indigo-600 font-bold w-full text-center py-2">+ 新增一題</button>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t">
+                <button onClick={() => setScreen('SP_MENU')} className="flex-1 py-2 bg-slate-200 text-slate-700 font-bold rounded-lg">取消</button>
+                <button onClick={handleSaveCol} className="flex-1 py-2 bg-indigo-600 text-white font-bold rounded-lg">儲存合集</button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* 題庫管理頁面 (新增/刪除/調整) */}
-      {gameMode === 'manage' && (
-        <div className="bg-white p-6 rounded-xl shadow-md space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold text-slate-800">題庫合集管理</h2>
-            <button 
-              onClick={() => setGameMode('menu')}
-              className="text-sm text-slate-500 hover:text-slate-800"
-            >
-              ← 返回主選單
-            </button>
-          </div>
+          {/* 4. 單人遊戲畫面 */}
+          {screen === 'SP_GAME' && spWordData && (
+            <div className="w-full bg-white p-6 rounded-2xl shadow-xl flex flex-col items-center space-y-4">
+              <div className="w-full flex justify-between text-xs text-slate-400 font-bold">
+                <span>{spCurrentCol.name}</span>
+                <span>進度 {spWordIndex + 1} / {spCurrentCol.words.length}</span>
+              </div>
+              <div className="bg-amber-50 p-2 rounded-xl border border-amber-200">
+                <canvas ref={canvasRef} width={200} height={180} />
+              </div>
+              
+              <div className="flex gap-1 flex-wrap justify-center py-2 w-full max-w-full overflow-hidden">
+                {renderWordSpaces(spWordData.target, spGuessed, spWrong >= MAX_WRONG)}
+              </div>
 
-          {/* 建立新合集控制項 */}
-          <div className="flex items-center gap-4 p-4 bg-slate-100 rounded-lg">
-            <label className="text-sm font-bold text-slate-700">自訂輸入題目數量：</label>
-            <input 
-              type="number" 
-              min="1" 
-              max="20"
-              value={inputWordCount} 
-              onChange={(e) => setInputWordCount(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-16 p-2 border rounded text-center"
-            />
-            <button 
-              onClick={handleCreateCollection}
-              className="px-4 py-2 bg-emerald-600 text-white font-bold rounded hover:bg-emerald-700"
-            >
-              + 新增題庫合集
-            </button>
-          </div>
+              {spWrong >= MAX_WRONG && <p className="text-red-600 font-extrabold text-lg">💥 失敗！答案為：{spWordData.text} ({spWordData.target})</p>}
+              {spWordData.target.split('').every(c => c === ' ' || spGuessed.has(c)) && <p className="text-emerald-600 font-extrabold text-lg">🎉 猜中啦！</p>}
+              
+              <div className="grid grid-cols-7 sm:grid-cols-9 gap-1.5 w-full mt-4">
+                {keys.map(char => {
+                  const isGuessed = spGuessed.has(char);
+                  return (
+                    <button key={char} disabled={isGuessed || spWrong >= MAX_WRONG} onClick={() => handleSpGuess(char)} 
+                      className={`py-2 text-sm sm:text-base font-bold rounded-lg transition ${isGuessed ? 'bg-slate-200 text-slate-400' : 'bg-amber-100 hover:bg-amber-300'}`}>
+                      {char}
+                    </button>
+                  );
+                })}
+              </div>
 
-          {/* 合集列表 */}
-          <div className="space-y-3">
-            {collections.map(col => (
-              <div key={col.id} className="flex justify-between items-center p-4 border rounded-lg">
+              <div className="flex gap-4 w-full pt-4 border-t">
+                <button onClick={() => setScreen('SP_MENU')} className="flex-1 py-2 bg-slate-100 text-slate-600 font-bold rounded-lg">退出</button>
+                <button onClick={nextSpWord} className="flex-1 py-2 bg-amber-500 text-white font-bold rounded-lg">下一題</button>
+              </div>
+            </div>
+          )}
+
+          {/* 5. 多人連線選單 */}
+          {screen === 'MP_LOGIN' && (
+            <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-4">
+              <h2 className="text-xl font-bold text-center">進入多人房間</h2>
+              <div className="flex justify-center gap-2 mt-3">
+                <button onClick={() => setLangMode('ZH')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${langMode === 'ZH' ? 'bg-indigo-600 text-white shadow' : 'bg-indigo-100 text-indigo-900'}`}>國字/注音房</button>
+                <button onClick={() => setLangMode('EN')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${langMode === 'EN' ? 'bg-indigo-600 text-white shadow' : 'bg-indigo-100 text-indigo-900'}`}>英文片語房</button>
+              </div>
+              <div className="space-y-3">
+                <input type="text" placeholder="房間號碼 (數字/英文)" value={roomIdInput} onChange={e => setRoomIdInput(e.target.value)} className="w-full p-2.5 border rounded-lg" />
+                <input type="text" placeholder="你的玩家暱稱" value={playerNameInput} onChange={e => setPlayerNameInput(e.target.value)} className="w-full p-2.5 border rounded-lg" />
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button onClick={handleCreateRoom} className="py-3 bg-indigo-600 text-white font-bold rounded-xl shadow">🏠 創建房間</button>
+                <button onClick={handleJoinRoom} className="py-3 bg-emerald-600 text-white font-bold rounded-xl shadow">🚪 加入房間</button>
+              </div>
+              <button onClick={() => setScreen('HOME')} className="w-full py-2 bg-slate-100 text-slate-600 font-bold rounded-lg mt-2">返回主頁</button>
+            </div>
+          )}
+
+          {/* 6. 多人房間 */}
+          {screen === 'MP_ROOM' && roomData && (
+            <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-5">
+              
+              <div className="flex justify-between items-center border-b pb-3">
                 <div>
-                  <h3 className="font-bold text-slate-800">{col.name}</h3>
-                  <span className="text-xs text-slate-500">
-                    類別: {col.type === 'zhuyin' ? '國字 (自動轉注音)' : '英文 (支援片語/空格)'} | 題數: {col.words.length}
+                  <span className="font-extrabold text-lg text-indigo-900">房號：{roomId}</span>
+                  <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                    {roomData.langMode === 'ZH' ? '注音' : '英文'} (目標:{roomData.settings?.winScore}分)
                   </span>
                 </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => setEditingCollection(col)}
-                    className="px-3 py-1 bg-amber-500 text-white text-sm rounded hover:bg-amber-600"
-                  >
-                    編輯/調整
-                  </button>
-                  <button 
-                    onClick={() => handleDeleteCollection(col.id)}
-                    className="px-3 py-1 bg-rose-500 text-white text-sm rounded hover:bg-rose-600"
-                  >
-                    刪除
-                  </button>
+                {playerId === roomData.ownerId && (
+                  <button onClick={handleDisbandRoom} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold hover:bg-red-200">解散房間</button>
+                )}
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-xl border">
+                <p className="text-xs font-bold text-slate-500 mb-2">🏆 記分板與狀態：</p>
+                <div className="space-y-1.5">
+                  {(roomData.playerOrder || []).map((pId) => {
+                    const pInfo = roomData.players[pId];
+                    if(!pInfo) return null;
+                    const isCurrentSetter = roomData.status === 'SETTING' && roomData.playerOrder[roomData.setterIndex] === pId;
+                    return (
+                      <div key={pId} className="flex justify-between items-center text-sm font-bold border-b border-slate-200 pb-1 last:border-0">
+                        <span className="text-slate-700 flex items-center gap-1">
+                          {pInfo.name} 
+                          {pId === roomData.ownerId && <span className="text-[10px] bg-amber-200 text-amber-800 px-1 rounded">房主</span>}
+                          {isCurrentSetter && <span className="text-[10px] bg-indigo-600 text-white px-1 rounded animate-pulse">出題中</span>}
+                        </span>
+                        <div className="flex gap-3">
+                          <span className="text-emerald-600">{pInfo.score} 分</span>
+                          <span className={pInfo.isReady ? "text-emerald-500" : "text-slate-300"}>{pInfo.isReady ? 'READY' : 'WAIT'}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* 編輯 / 新增題庫 Modal */}
-      {editingCollection && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white p-6 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto space-y-4">
-            <h3 className="text-lg font-bold text-slate-800">
-              {editingCollection.id ? '調整題庫合集' : '新增題庫合集'}
-            </h3>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">合集名稱</label>
-              <input 
-                type="text" 
-                value={editingCollection.name}
-                onChange={(e) => setEditingCollection({...editingCollection, name: e.target.value})}
-                className="w-full p-2 border rounded"
-                placeholder="例如：動物英文片語"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">出題類型</label>
-              <select 
-                value={editingCollection.type}
-                onChange={(e) => setEditingCollection({...editingCollection, type: e.target.value})}
-                className="w-full p-2 border rounded"
-              >
-                <option value="zhuyin">國字題目（出示時自動轉注音+聲調）</option>
-                <option value="english">英文題目（支援空白格片語）</option>
-              </select>
-            </div>
-
-            {/* 動態單字列表 */}
-            <div className="space-y-3">
-              <label className="block text-sm font-medium text-slate-700">題目內容與提示：</label>
-              {editingCollection.words.map((wordObj, idx) => (
-                <div key={idx} className="flex gap-2 items-center">
-                  <span className="text-sm font-bold text-slate-400 w-6">{idx + 1}.</span>
-                  <input 
-                    type="text" 
-                    placeholder={editingCollection.type === 'zhuyin' ? '輸入國字 (例: 蘋果)' : '輸入英文 (例: ICE CREAM)'}
-                    value={wordObj.text}
-                    onChange={(e) => {
-                      const newWords = [...editingCollection.words];
-                      newWords[idx].text = e.target.value;
-                      setEditingCollection({...editingCollection, words: newWords});
-                    }}
-                    className="flex-1 p-2 border rounded"
-                  />
-                  <input 
-                    type="text" 
-                    placeholder="提示 (選填)"
-                    value={wordObj.hint}
-                    onChange={(e) => {
-                      const newWords = [...editingCollection.words];
-                      newWords[idx].hint = e.target.value;
-                      setEditingCollection({...editingCollection, words: newWords});
-                    }}
-                    className="flex-1 p-2 border rounded"
-                  />
-                  <button 
-                    onClick={() => {
-                      const newWords = editingCollection.words.filter((_, i) => i !== idx);
-                      setEditingCollection({...editingCollection, words: newWords});
-                    }}
-                    className="text-rose-500 font-bold px-2"
-                  >
-                    ✕
+              {/* 大廳等待 */}
+              {roomData.status === 'LOBBY' && (
+                <div className="flex flex-col gap-3">
+                  <p className="text-center text-sm font-bold text-slate-500">等待玩家準備...</p>
+                  <button onClick={toggleReady} className={`py-3 font-bold rounded-xl shadow text-white ${roomData.players[playerId]?.isReady ? 'bg-amber-500' : 'bg-emerald-600'}`}>
+                    {roomData.players[playerId]?.isReady ? '取消準備' : '✓ 準備就緒'}
                   </button>
+                  {playerId === roomData.ownerId && allPlayersReady && (
+                    <button onClick={handleStartGame} className="py-3 bg-indigo-600 text-white font-bold rounded-xl shadow animate-bounce">🚀 開始遊戲！</button>
+                  )}
                 </div>
-              ))}
-              <button 
-                onClick={() => setEditingCollection({
-                  ...editingCollection, 
-                  words: [...editingCollection.words, { text: '', hint: '' }]
-                })}
-                className="text-sm text-indigo-600 font-bold mt-2"
-              >
-                + 增加一組題目
-              </button>
+              )}
+
+              {/* 出題階段 */}
+              {roomData.status === 'SETTING' && (
+                <div className="text-center space-y-4">
+                  <div className="flex justify-center mb-2"><div className="w-16 h-16 rounded-full border-4 border-indigo-200 border-t-indigo-600 animate-spin flex items-center justify-center font-bold text-indigo-700">{timeLeft}s</div></div>
+                  {roomData.playerOrder[roomData.setterIndex] === playerId ? (
+                    <div className="space-y-3 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                      <p className="font-bold text-indigo-900">輪到您出題！</p>
+                      <input 
+                        type="text" 
+                        placeholder={roomData.langMode === 'ZH' ? "輸入出題字 (例如: 蘋果)" : "輸入英文單字/片語 (可含空白)"}
+                        value={mpWordText}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setMpWordText(val);
+                          if(roomData.langMode === 'ZH') setMpWordTarget(autoConvertZhuyin(val));
+                          else setMpWordTarget(val.toUpperCase());
+                        }}
+                        className="w-full p-2.5 border rounded-lg font-bold text-center"
+                      />
+                      <input 
+                        type="text" 
+                        placeholder={roomData.langMode === 'ZH' ? "注音 (若未自動轉換請手動輸入)" : "目標解答"}
+                        value={mpWordTarget}
+                        onChange={(e) => setMpWordTarget(e.target.value.toUpperCase())}
+                        className="w-full p-2.5 border rounded-lg font-bold text-center bg-white text-indigo-700"
+                      />
+                      <button onClick={handleSubmitMpWord} className="w-full py-2 bg-indigo-600 text-white font-bold rounded-lg shadow">送出題目</button>
+                    </div>
+                  ) : (
+                    <p className="font-bold text-slate-500 animate-pulse">等待 <span className="text-indigo-600">{roomData.players[roomData.playerOrder[roomData.setterIndex]]?.name}</span> 出題中...</p>
+                  )}
+                </div>
+              )}
+
+              {/* 遊戲階段 */}
+              {roomData.status === 'PLAYING' && (
+                <div className="flex flex-col items-center space-y-4 relative">
+                  <div className="bg-amber-50 p-2 rounded-xl border border-amber-200"><canvas ref={canvasRef} width={200} height={180} /></div>
+                  <div className="flex gap-1 flex-wrap justify-center py-2 w-full max-w-full overflow-hidden">
+                    {renderWordSpaces(roomData.wordTarget, new Set(roomData.guessed || []), false)}
+                  </div>
+                  {playerId === roomData.playerOrder[roomData.setterIndex] ? (
+                    <p className="text-sm font-bold text-indigo-600 mb-2">您是出題者，觀察大家猜題吧！(題目: {roomData.wordText})</p>
+                  ) : (
+                    <div className="grid grid-cols-7 sm:grid-cols-9 gap-1.5 w-full mt-2">
+                      {keys.map(char => {
+                        const isGuessed = (roomData.guessed || []).includes(char);
+                        return (
+                          <button key={char} disabled={isGuessed || roomData.wrongCount >= MAX_WRONG} onClick={() => handleMpGuess(char)} 
+                            className={`py-2 text-sm sm:text-base font-bold rounded-lg transition ${isGuessed ? 'bg-slate-200 text-slate-400' : 'bg-amber-100 hover:bg-amber-300 active:bg-amber-400'}`}>
+                            {char}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 遊戲結束結算 */}
+              {roomData.status === 'GAME_OVER' && (
+                <div className="text-center space-y-4 py-4">
+                  <h3 className="text-2xl font-extrabold text-indigo-700">🏆 遊戲結束！</h3>
+                  <div className="flex justify-center"><button onClick={() => setShowReview(!showReview)} className="text-sm text-slate-500 underline">查看歷史題目紀錄</button></div>
+                  {showReview && roomData.wordHistory && (
+                    <div className="bg-slate-50 p-3 rounded-lg text-xs text-left max-h-40 overflow-auto border">
+                      {roomData.wordHistory.map((h, i) => (
+                        <p key={i} className="mb-1"><span className="font-bold text-indigo-600">[{h.setter}]</span> 出題 <span className="font-bold text-slate-700">"{h.word}"</span> ({h.target}) - <span className="text-emerald-600">{h.status} ({h.winner})</span></p>
+                      ))}
+                    </div>
+                  )}
+                  {playerId === roomData.ownerId && (
+                    <button onClick={() => firebase.database().ref('rooms/' + roomId).update({ status: 'LOBBY' })} className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow">🔄 返回大廳重新開始</button>
+                  )}
+                </div>
+              )}
             </div>
+          )}
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
-              <button 
-                onClick={() => setEditingCollection(null)}
-                className="px-4 py-2 border rounded text-slate-600"
-              >
-                取消
-              </button>
-              <button 
-                onClick={handleSaveCollection}
-                className="px-4 py-2 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700"
-              >
-                儲存合集
-              </button>
-            </div>
-          </div>
         </div>
-      )}
+      );
+    }
 
-      {/* 進行遊戲畫面 */}
-      {gameMode === 'playing' && currentTarget && (
-        <div className="bg-white p-6 rounded-xl shadow-md text-center space-y-6">
-          <div className="flex justify-between items-center text-sm text-slate-500">
-            <span>合集：{currentCollection.name}</span>
-            <span>進度：{currentWordIndex + 1} / {currentCollection.words.length}</span>
-          </div>
-
-          <div className="bg-amber-50 p-3 rounded-lg text-amber-800 text-sm">
-            提示：{currentTarget.hint || '無提示'}
-          </div>
-
-          {/* 猜題區域 (含注音轉換 / 英文空格處理) */}
-          {renderGuessDisplay()}
-
-          {/* 測試用輸入與操作鍵 */}
-          <div className="pt-6 border-t flex justify-between items-center">
-            <button 
-              onClick={() => setGameMode('menu')}
-              className="text-slate-500 hover:text-slate-800 text-sm"
-            >
-              結束遊戲返回
-            </button>
-
-            <button 
-              onClick={() => {
-                if (currentWordIndex < currentCollection.words.length - 1) {
-                  setCurrentWordIndex(prev => prev + 1);
-                  setGuessedLetters(new Set());
-                } else {
-                  alert('恭喜完成此合集的所有題目！');
-                  setGameMode('menu');
-                }
-              }}
-              className="px-4 py-2 bg-slate-800 text-white rounded font-bold text-sm"
-            >
-              下一題
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<HangmanGame />);
+  </script>
+</body>
+</html>
