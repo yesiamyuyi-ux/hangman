@@ -34,19 +34,41 @@
     }
 
     const ALPHABET_EN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-    // 加入四個聲調符號 (輕聲、二聲、三聲、四聲)。一聲通常不標記，直接留空即可。
+    // 注音符號按鈕（包含輕聲、二聲、三聲、四聲，一聲無符號）
     const ZHUYIN_LIST = ['ㄅ','ㄆ','ㄇ','ㄈ','ㄉ','ㄊ','ㄋ','ㄌ','ㄍ','ㄎ','ㄏ','ㄐ','ㄑ','ㄒ','ㄓ','ㄔ','ㄕ','ㄖ','ㄗ','ㄘ','ㄙ','ㄧ','ㄨ','ㄩ','ㄚ','ㄛ','ㄜ','ㄝ','ㄞ','ㄟ','ㄠ','ㄡ','ㄢ','ㄣ','ㄤ','ㄥ','ㄦ','˙','ˊ','ˇ','ˋ'];
     const MAX_WRONG = 6;
 
-    // 簡易內建國字轉注音字典 (未在字典內的字，出題者可手動補齊注音)
+    // 擴充內建國字轉注音字典
     const ZHUYIN_DICT = {
       '柑': 'ㄍㄢ', '仔': 'ㄗㄞˇ', '店': 'ㄉㄧㄢˋ', '推': 'ㄊㄨㄟ', '冰': 'ㄅㄧㄥ', '壺': 'ㄏㄨˊ',
       '珍': 'ㄓㄣ', '珠': 'ㄓㄨ', '奶': 'ㄋㄞˇ', '茶': 'ㄔㄚˊ', '貓': 'ㄇㄠ', '狗': 'ㄍㄡˇ',
-      '翻': 'ㄈㄢ', '樂': 'ㄌㄜˋ', '蘋': 'ㄆㄧㄥˊ', '果': 'ㄍㄨㄛˇ', '紅': 'ㄏㄨㄥˊ', '茶': 'ㄔㄚˊ'
+      '翻': 'ㄈㄢ', '樂': 'ㄌㄜˋ', '蘋': 'ㄆㄧㄥˊ', '果': 'ㄍㄨㄛˇ', '紅': 'ㄏㄨㄥˊ',
+      '大': 'ㄉㄚˋ', '家': 'ㄐㄧㄚ', '好': 'ㄏㄠˇ', '心': 'ㄒㄧㄣ', '情': 'ㄑㄧㄥˊ',
+      '快': 'ㄎㄨㄞˋ', '春': 'ㄔㄨㄣ', '水': 'ㄕㄨㄟˇ', '堂': 'ㄊㄤˊ', '長': 'ㄔㄤˊ',
+      '照': 'ㄓㄠˋ', '學': 'ㄒㄩㄝˊ', '生': 'ㄕㄥ', '吉': 'ㄐㄧ', '祥': 'ㄒㄧㄤˊ',
+      '話': 'ㄏㄨㄚˋ', '老': 'ㄌㄠˇ', '人': 'ㄖㄣˊ', '愛': 'ㄞˋ', '吃': 'ㄔ',
+      '飯': 'ㄈㄢˋ', '喝': 'ㄏㄜ', '遊': 'ㄧㄡˊ', '戲': 'ㄒㄧˋ', '對': 'ㄉㄨㄟˋ',
+      '戰': 'ㄓㄢˋ', '連': 'ㄌㄧㄢˊ', '線': 'ㄒㄧㄢˋ', '星': 'ㄒㄧㄥ', '期': 'ㄑㄧ',
+      '日': 'ㄖˋ', '月': 'ㄩㄝˋ', '天': 'ㄊㄧㄢ', '地': 'ㄉㄧˋ', '福': 'ㄈㄨˊ'
     };
 
+    // 清理與標準化注音字串：將一聲符號 (ˉ 或 1) 去除，避免玩家無法點擊
+    function cleanZhuyinTarget(str) {
+      if (!str) return '';
+      return str
+        .replace(/[ˉ1]/g, '') // 移除一聲符號
+        .replace(/2/g, 'ˊ')
+        .replace(/3/g, 'ˇ')
+        .replace(/4/g, 'ˋ')
+        .replace(/5/g, '˙')
+        .trim();
+    }
+
+    // 自動轉換國字為注音，並去除一聲符號 conflict
     function autoConvertZhuyin(text) {
-      return text.split('').map(c => ZHUYIN_DICT[c] || c).join(' ');
+      if (!text) return '';
+      const converted = text.split('').map(c => ZHUYIN_DICT[c] || c).join(' ');
+      return cleanZhuyinTarget(converted);
     }
 
     // 初始預設題庫
@@ -73,19 +95,19 @@
     function HangmanGame() {
       const [screen, setScreen] = useState('HOME');
       
-      // ─── 單人模式：題庫與遊戲 ───
+      // ─── 單人模式 ───
       const [collections, setCollections] = useState(() => {
         const saved = localStorage.getItem('hangman_collections_v2');
         return saved ? JSON.parse(saved) : DEFAULT_COLLECTIONS;
       });
       const [spCurrentCol, setSpCurrentCol] = useState(null);
       const [spWordIndex, setSpWordIndex] = useState(0);
-      const [spWordData, setSpWordData] = useState(null); // { text, target }
+      const [spWordData, setSpWordData] = useState(null);
       const [spGuessed, setSpGuessed] = useState(new Set());
       const [spWrong, setSpWrong] = useState(0);
 
-      // 單人模式：合集管理
-      const [editingCol, setEditingCol] = useState(null); // null 表示不在編輯狀態
+      // 單人合集編輯
+      const [editingCol, setEditingCol] = useState(null);
       const [wordCountInput, setWordCountInput] = useState(3);
 
       // ─── 多人模式 ───
@@ -97,20 +119,19 @@
       const [roomData, setRoomData] = useState(null);
       const [langMode, setLangMode] = useState('ZH'); 
       
-      const [mpWordText, setMpWordText] = useState(''); // 出題者輸入的國字/英文
-      const [mpWordTarget, setMpWordTarget] = useState(''); // 實際要猜的注音/英文
+      const [mpWordText, setMpWordText] = useState('');
+      const [mpWordTarget, setMpWordTarget] = useState('');
       
       const [timeLeft, setTimeLeft] = useState(0);
       const [showReview, setShowReview] = useState(false);
 
       const canvasRef = useRef(null);
 
-      // 儲存題庫到 LocalStorage
       useEffect(() => {
         localStorage.setItem('hangman_collections_v2', JSON.stringify(collections));
       }, [collections]);
 
-      // 畫吊死人
+      // 繪製 Hangman Canvas
       const drawHangman = useCallback((wrongCount) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -137,7 +158,7 @@
         if (screen === 'MP_ROOM' && roomData && roomData.status === 'PLAYING') drawHangman(roomData.wrongCount || 0);
       }, [spWrong, roomData, screen, drawHangman]);
 
-      // Firebase 即時資料監聽與解散防護
+      // Firebase 即時資料監聽
       useEffect(() => {
         if (!roomId) return;
         const roomRef = firebase.database().ref('rooms/' + roomId);
@@ -158,7 +179,7 @@
         return () => roomRef.off('value', handleValue);
       }, [roomId, screen]);
 
-      // 倒數計時器
+      // 多人倒數計時器
       useEffect(() => {
         if (roomData?.status === 'SETTING' && roomData.settingDeadline) {
           const interval = setInterval(() => {
@@ -168,18 +189,18 @@
             
             if (remain === 0 && playerId === roomData.ownerId) {
               const nextIdx = (roomData.setterIndex + 1) % (roomData.playerOrder?.length || 1);
+              const timeLimit = roomData.settings?.timeLimit || 30;
               firebase.database().ref('rooms/' + roomId).update({
                 setterIndex: nextIdx,
-                settingDeadline: Date.now() + (roomData.settings.timeLimit * 1000)
+                settingDeadline: Date.now() + (timeLimit * 1000)
               });
             }
           }, 500);
           return () => clearInterval(interval);
         }
-      }, [roomData?.status, roomData?.settingDeadline, roomData?.setterIndex, roomData?.ownerId, roomData?.playerOrder, playerId, roomId]);
+      }, [roomData?.status, roomData?.settingDeadline, roomData?.setterIndex, roomData?.ownerId, roomData?.playerOrder, roomData?.settings?.timeLimit, playerId, roomId]);
 
-
-      // ─── 單人題庫管理邏輯 ───
+      // ─── 單人模式邏輯 ───
       const openCreateCol = () => {
         setEditingCol({
           id: Date.now().toString(),
@@ -192,7 +213,10 @@
 
       const handleSaveCol = () => {
         if (!editingCol.name.trim()) return alert('請輸入合集名稱');
-        const validWords = editingCol.words.filter(w => w.text.trim() !== '' && w.target.trim() !== '');
+        const validWords = editingCol.words
+          .filter(w => w.text.trim() !== '' && w.target.trim() !== '')
+          .map(w => ({ ...w, target: cleanZhuyinTarget(w.target.toUpperCase()) }));
+
         if (validWords.length === 0) return alert('請至少填寫一組完整的題目與解答');
         
         const newCol = { ...editingCol, words: validWords };
@@ -210,7 +234,6 @@
         }
       };
 
-      // ─── 單人遊戲邏輯 ───
       const startSpGame = (col) => {
         setSpCurrentCol(col);
         setSpWordIndex(0);
@@ -243,14 +266,12 @@
         }
       };
 
-      // 渲染單字框 (支援空白格顯示)
       const renderWordSpaces = (targetStr, guessedSet, isGameOver) => {
         return targetStr.split('').map((char, idx) => {
           if (char === ' ') {
-            // 空白格：不顯示底線，作為片語或注音的斷詞
             return <div key={idx} className="w-3 sm:w-6 h-11" />;
           }
-          const isGuessed = guessedSet.has(char) || isGameOver;
+          const isGuessed = (guessedSet instanceof Set ? guessedSet.has(char) : (guessedSet || []).includes(char)) || isGameOver;
           return (
             <span key={idx} className="w-8 h-11 sm:w-10 sm:h-12 border-b-4 border-slate-700 text-xl sm:text-2xl font-bold flex items-center justify-center mb-2">
               {isGuessed ? char : ''}
@@ -259,8 +280,7 @@
         });
       };
 
-
-      // ─── 多人遊戲邏輯 ───
+      // ─── 多人模式邏輯 ───
       const generatePlayerId = () => 'p_' + Math.random().toString(36).substring(2, 9);
 
       const handleCreateRoom = () => {
@@ -339,11 +359,18 @@
         firebase.database().ref(`rooms/${roomId}/players/${playerId}`).update({ isReady: !currentReady });
       };
 
+      // 修改房間設定 (房主專用)
+      const handleUpdateSettings = (key, value) => {
+        if (!roomData || roomData.ownerId !== playerId) return;
+        firebase.database().ref(`rooms/${roomId}/settings/${key}`).set(Number(value));
+      };
+
       const handleStartGame = () => {
+        const timeLimit = roomData.settings?.timeLimit || 30;
         firebase.database().ref('rooms/' + roomId).update({
           status: 'SETTING',
           setterIndex: 0,
-          settingDeadline: Date.now() + (roomData.settings.timeLimit * 1000),
+          settingDeadline: Date.now() + (timeLimit * 1000),
           wordHistory: [],
           guessed: [],
           wrongCount: 0
@@ -358,9 +385,13 @@
       // 多人出題提交
       const handleSubmitMpWord = () => {
         if (!mpWordText.trim() || !mpWordTarget.trim()) return alert('請完整輸入題目與解答格式！');
+        
+        // 進行一聲與聲調符號清理
+        const sanitizedTarget = cleanZhuyinTarget(mpWordTarget.trim().toUpperCase());
+
         firebase.database().ref('rooms/' + roomId).update({
           wordText: mpWordText.trim(),
-          wordTarget: mpWordTarget.trim().toUpperCase(),
+          wordTarget: sanitizedTarget,
           status: 'PLAYING',
           guessed: [],
           wrongCount: 0
@@ -380,7 +411,6 @@
         const isWrong = !roomData.wordTarget.includes(char);
         const newWrongCount = isWrong ? (roomData.wrongCount + 1) : roomData.wrongCount;
 
-        // 判斷勝利：所有非空白字元皆被猜中
         const isWordComplete = roomData.wordTarget.split('').every(c => c === ' ' || newGuessed.includes(c));
         const isHanged = newWrongCount >= MAX_WRONG;
 
@@ -389,6 +419,7 @@
         if (isWordComplete || isHanged) {
           const winnerId = isWordComplete ? playerId : currentSetterId;
           const newScore = (roomData.players[winnerId]?.score || 0) + 1;
+          const winScoreTarget = roomData.settings?.winScore || 5;
           
           updates[`players/${winnerId}/score`] = newScore;
           
@@ -401,18 +432,31 @@
           };
           updates.wordHistory = [...(roomData.wordHistory || []), historyItem];
 
-          if (newScore >= roomData.settings.winScore) {
+          if (newScore >= winScoreTarget) {
             updates.status = 'GAME_OVER';
           } else {
+            const timeLimit = roomData.settings?.timeLimit || 30;
             updates.status = 'SETTING';
             updates.setterIndex = (roomData.setterIndex + 1) % roomData.playerOrder.length;
-            updates.settingDeadline = Date.now() + (roomData.settings.timeLimit * 1000);
+            updates.settingDeadline = Date.now() + (timeLimit * 1000);
           }
         }
         firebase.database().ref('rooms/' + roomId).update(updates);
       };
 
-      const keys = (screen === 'SP_GAME' ? spCurrentCol.lang : (roomData?.langMode || langMode)) === 'ZH' ? ZHUYIN_LIST : ALPHABET_EN;
+      // 重置回大廳 (遊戲結束後使用)
+      const handleBackToLobby = () => {
+        firebase.database().ref('rooms/' + roomId).update({
+          status: 'LOBBY',
+          wordText: '',
+          wordTarget: '',
+          guessed: [],
+          wrongCount: 0
+        });
+        setShowReview(false);
+      };
+
+      const keys = (screen === 'SP_GAME' ? spCurrentCol?.lang : (roomData?.langMode || langMode)) === 'ZH' ? ZHUYIN_LIST : ALPHABET_EN;
       const allPlayersReady = useMemo(() => {
         if (!roomData || !roomData.players) return false;
         return Object.values(roomData.players).every(p => p.isReady);
@@ -422,14 +466,14 @@
         <div className="flex flex-col items-center justify-start p-4 max-w-2xl mx-auto">
           <header className="w-full text-center py-4 border-b-2 border-dashed border-amber-300 mb-6">
             <h1 className="text-3xl font-extrabold text-amber-900 mb-2">✏️ 吊死人猜字連線對戰</h1>
-            <p className="text-xs text-amber-700 font-bold tracking-widest">中英雙語・空白片語・注音聲調版</p>
+            <p className="text-xs text-amber-700 font-bold tracking-widest">中英雙語・空白片語・注音聲調優化版</p>
           </header>
 
           {/* 1. 首頁 */}
           {screen === 'HOME' && (
             <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-6">
-              <button onClick={() => setScreen('SP_MENU')} className="w-full py-5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-md text-xl">🎮 單人練習 (題庫合集)</button>
-              <button onClick={() => setScreen('MP_LOGIN')} className="w-full py-5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md text-xl">🌐 多人線上對戰</button>
+              <button onClick={() => setScreen('SP_MENU')} className="w-full py-5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-md text-xl transition">🎮 單人練習 (題庫合集)</button>
+              <button onClick={() => setScreen('MP_LOGIN')} className="w-full py-5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md text-xl transition">🌐 多人線上對戰</button>
             </div>
           )}
 
@@ -438,7 +482,7 @@
             <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-6">
               <div className="flex justify-between items-center mb-2">
                 <h2 className="text-xl font-bold text-slate-800">選擇題庫合集</h2>
-                <button onClick={() => setScreen('HOME')} className="text-sm text-slate-400">返回首頁</button>
+                <button onClick={() => setScreen('HOME')} className="text-sm text-slate-400 hover:text-slate-600">返回首頁</button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -463,7 +507,7 @@
               <div className="border-t pt-4 flex gap-3 items-center">
                 <label className="text-sm font-bold text-slate-600">自訂題目數量：</label>
                 <input type="number" min="1" max="20" value={wordCountInput} onChange={e => setWordCountInput(parseInt(e.target.value)||1)} className="w-16 p-2 border rounded" />
-                <button onClick={openCreateCol} className="flex-1 py-2 bg-emerald-600 text-white font-bold rounded-lg">+ 建立新合集</button>
+                <button onClick={openCreateCol} className="flex-1 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition">+ 建立新合集</button>
               </div>
             </div>
           )}
@@ -471,59 +515,55 @@
           {/* 3. 單人題庫管理 (編輯/新增) */}
           {screen === 'SP_MANAGE' && editingCol && (
             <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-4">
-              <h2 className="text-lg font-bold text-slate-800">{editingCol.id === 'new' ? '新增合集' : '編輯合集'}</h2>
+              <h2 className="text-lg font-bold text-slate-800">編輯合集內容</h2>
               
               <div className="flex gap-4">
-                <input type="text" placeholder="合集名稱" value={editingCol.name} onChange={e => setEditingCol({...editingCol, name: e.target.value})} className="flex-1 p-2 border rounded" />
+                <input type="text" placeholder="合集名稱" value={editingCol.name} onChange={e => setEditingCol({...editingCol, name: e.target.value})} className="flex-1 p-2 border rounded font-bold" />
                 <select value={editingCol.lang} onChange={e => setEditingCol({...editingCol, lang: e.target.value})} className="p-2 border rounded font-bold">
-                  <option value="ZH">注音模式 (輸入國字)</option>
-                  <option value="EN">英文模式 (支援片語空白)</option>
+                  <option value="ZH">注音 (ZH)</option>
+                  <option value="EN">英文 (EN)</option>
                 </select>
               </div>
 
-              <div className="space-y-2 mt-4 max-h-96 overflow-y-auto pr-2">
-                {editingCol.words.map((w, i) => (
-                  <div key={i} className="flex gap-2 p-3 bg-slate-50 rounded border">
-                    <span className="font-bold text-slate-400 mt-2">{i+1}.</span>
-                    <div className="flex-1 space-y-2">
-                      <input 
-                        type="text" 
-                        placeholder={editingCol.lang === 'ZH' ? '輸入國字 (例: 珍珠奶茶)' : '輸入英文 (例: ICE CREAM)'} 
-                        value={w.text} 
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const newWords = [...editingCol.words];
-                          newWords[i].text = val;
-                          if(editingCol.lang === 'ZH') newWords[i].target = autoConvertZhuyin(val);
-                          else newWords[i].target = val.toUpperCase();
-                          setEditingCol({...editingCol, words: newWords});
-                        }} 
-                        className="w-full p-2 border rounded text-sm font-bold" 
-                      />
-                      <input 
-                        type="text" 
-                        placeholder={editingCol.lang === 'ZH' ? '注音轉換結果 (可手動修改/加上空白分詞)' : '解答目標 (同上)'} 
-                        value={w.target} 
-                        onChange={(e) => {
-                          const newWords = [...editingCol.words];
-                          newWords[i].target = e.target.value.toUpperCase();
-                          setEditingCol({...editingCol, words: newWords});
-                        }} 
-                        className="w-full p-2 border rounded text-sm bg-indigo-50 text-indigo-700" 
-                      />
-                    </div>
-                    <button onClick={() => {
-                      const newWords = editingCol.words.filter((_, idx) => idx !== i);
-                      setEditingCol({...editingCol, words: newWords});
-                    }} className="text-red-500 font-bold px-2">✕</button>
+              <div className="space-y-3 max-h-80 overflow-y-auto p-1">
+                {editingCol.words.map((w, idx) => (
+                  <div key={idx} className="flex gap-2 items-center bg-slate-50 p-2 rounded">
+                    <span className="text-xs text-slate-400 w-5">{idx + 1}.</span>
+                    <input 
+                      type="text" 
+                      placeholder="國字/單字 (如: 柑仔店)" 
+                      value={w.text} 
+                      onChange={e => {
+                        const newText = e.target.value;
+                        const newWords = [...editingCol.words];
+                        newWords[idx].text = newText;
+                        if (editingCol.lang === 'ZH') {
+                          newWords[idx].target = autoConvertZhuyin(newText);
+                        } else {
+                          newWords[idx].target = newText.toUpperCase();
+                        }
+                        setEditingCol({...editingCol, words: newWords});
+                      }} 
+                      className="flex-1 p-2 border rounded text-sm" 
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="解答 (如: ㄍㄢ ㄗㄞˇ ㄉㄧㄢˋ)" 
+                      value={w.target} 
+                      onChange={e => {
+                        const newWords = [...editingCol.words];
+                        newWords[idx].target = e.target.value;
+                        setEditingCol({...editingCol, words: newWords});
+                      }} 
+                      className="flex-1 p-2 border rounded text-sm font-mono" 
+                    />
                   </div>
                 ))}
-                <button onClick={() => setEditingCol({...editingCol, words: [...editingCol.words, {text:'', target:''}]})} className="text-sm text-indigo-600 font-bold w-full text-center py-2">+ 新增一題</button>
               </div>
 
-              <div className="flex gap-3 pt-4 border-t">
+              <div className="flex gap-3 pt-2">
                 <button onClick={() => setScreen('SP_MENU')} className="flex-1 py-2 bg-slate-200 text-slate-700 font-bold rounded-lg">取消</button>
-                <button onClick={handleSaveCol} className="flex-1 py-2 bg-indigo-600 text-white font-bold rounded-lg">儲存合集</button>
+                <button onClick={handleSaveCol} className="flex-1 py-2 bg-amber-500 text-white font-bold rounded-lg">儲存合集</button>
               </div>
             </div>
           )}
@@ -531,198 +571,320 @@
           {/* 4. 單人遊戲畫面 */}
           {screen === 'SP_GAME' && spWordData && (
             <div className="w-full bg-white p-6 rounded-2xl shadow-xl flex flex-col items-center space-y-4">
-              <div className="w-full flex justify-between text-xs text-slate-400 font-bold">
-                <span>{spCurrentCol.name}</span>
-                <span>進度 {spWordIndex + 1} / {spCurrentCol.words.length}</span>
+              <div className="w-full flex justify-between items-center text-sm font-bold text-slate-500">
+                <span>合集：{spCurrentCol.name} ({spWordIndex + 1}/{spCurrentCol.words.length})</span>
+                <button onClick={() => setScreen('SP_MENU')} className="text-slate-400 hover:text-slate-600">退出</button>
               </div>
-              <div className="bg-amber-50 p-2 rounded-xl border border-amber-200">
-                <canvas ref={canvasRef} width={200} height={180} />
+
+              <canvas ref={canvasRef} width="200" height="200" className="bg-amber-50 rounded-xl border" />
+
+              <div className="text-center font-extrabold text-2xl text-amber-800 tracking-widest my-2">
+                {spWordData.text}
               </div>
-              
-              <div className="flex gap-1 flex-wrap justify-center py-2 w-full max-w-full overflow-hidden">
+
+              <div className="flex flex-wrap justify-center gap-1 sm:gap-2 my-2">
                 {renderWordSpaces(spWordData.target, spGuessed, spWrong >= MAX_WRONG)}
               </div>
 
-              {spWrong >= MAX_WRONG && <p className="text-red-600 font-extrabold text-lg">💥 失敗！答案為：{spWordData.text} ({spWordData.target})</p>}
-              {spWordData.target.split('').every(c => c === ' ' || spGuessed.has(c)) && <p className="text-emerald-600 font-extrabold text-lg">🎉 猜中啦！</p>}
-              
-              <div className="grid grid-cols-7 sm:grid-cols-9 gap-1.5 w-full mt-4">
-                {keys.map(char => {
-                  const isGuessed = spGuessed.has(char);
+              {/* 注音/英文 鍵盤 */}
+              <div className="flex flex-wrap justify-center gap-1.5 max-w-lg mt-4">
+                {keys.map(k => {
+                  const isUsed = spGuessed.has(k);
                   return (
-                    <button key={char} disabled={isGuessed || spWrong >= MAX_WRONG} onClick={() => handleSpGuess(char)} 
-                      className={`py-2 text-sm sm:text-base font-bold rounded-lg transition ${isGuessed ? 'bg-slate-200 text-slate-400' : 'bg-amber-100 hover:bg-amber-300'}`}>
-                      {char}
+                    <button
+                      key={k}
+                      disabled={isUsed || spWrong >= MAX_WRONG}
+                      onClick={() => handleSpGuess(k)}
+                      className={`w-9 h-11 sm:w-10 sm:h-12 rounded-lg font-bold text-lg shadow-sm transition ${
+                        isUsed ? 'bg-slate-200 text-slate-400 border' : 'bg-amber-100 hover:bg-amber-200 text-amber-900'
+                      }`}
+                    >
+                      {k}
                     </button>
                   );
                 })}
               </div>
 
-              <div className="flex gap-4 w-full pt-4 border-t">
-                <button onClick={() => setScreen('SP_MENU')} className="flex-1 py-2 bg-slate-100 text-slate-600 font-bold rounded-lg">退出</button>
-                <button onClick={nextSpWord} className="flex-1 py-2 bg-amber-500 text-white font-bold rounded-lg">下一題</button>
-              </div>
+              {/* 遊戲結果與下一題 */}
+              {(spWordData.target.split('').every(c => c === ' ' || spGuessed.has(c)) || spWrong >= MAX_WRONG) && (
+                <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl text-center w-full">
+                  <p className="font-extrabold text-lg mb-2">
+                    {spWrong >= MAX_WRONG ? '❌ 挑戰失敗！吊死人完成！' : '🎉 恭喜答對！天資聰穎！'}
+                  </p>
+                  <p className="text-sm text-slate-600 mb-3">正確解答：{spWordData.target}</p>
+                  <button onClick={nextSpWord} className="px-6 py-2 bg-amber-500 text-white font-bold rounded-lg shadow hover:bg-amber-600 transition">
+                    下一題 ➔
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* 5. 多人連線選單 */}
+          {/* 5. 多人對戰登入畫面 */}
           {screen === 'MP_LOGIN' && (
             <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-4">
-              <h2 className="text-xl font-bold text-center">進入多人房間</h2>
-              <div className="flex justify-center gap-2 mt-3">
-                <button onClick={() => setLangMode('ZH')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${langMode === 'ZH' ? 'bg-indigo-600 text-white shadow' : 'bg-indigo-100 text-indigo-900'}`}>國字/注音房</button>
-                <button onClick={() => setLangMode('EN')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${langMode === 'EN' ? 'bg-indigo-600 text-white shadow' : 'bg-indigo-100 text-indigo-900'}`}>英文片語房</button>
+              <div className="flex justify-between items-center mb-2">
+                <h2 className="text-xl font-bold text-slate-800">🌐 多人對戰連線</h2>
+                <button onClick={() => setScreen('HOME')} className="text-sm text-slate-400">回首頁</button>
               </div>
+
               <div className="space-y-3">
-                <input type="text" placeholder="房間號碼 (數字/英文)" value={roomIdInput} onChange={e => setRoomIdInput(e.target.value)} className="w-full p-2.5 border rounded-lg" />
-                <input type="text" placeholder="你的玩家暱稱" value={playerNameInput} onChange={e => setPlayerNameInput(e.target.value)} className="w-full p-2.5 border rounded-lg" />
+                <label className="block text-sm font-bold text-slate-700">玩家暱稱：</label>
+                <input type="text" placeholder="請輸入暱稱" value={playerNameInput} onChange={e => setPlayerNameInput(e.target.value)} className="w-full p-3 border rounded-xl font-bold" />
+
+                <label className="block text-sm font-bold text-slate-700">房間號碼：</label>
+                <input type="text" placeholder="例如: 888" value={roomIdInput} onChange={e => setRoomIdInput(e.target.value)} className="w-full p-3 border rounded-xl font-bold" />
+
+                <label className="block text-sm font-bold text-slate-700">語言模式：</label>
+                <div className="flex gap-4">
+                  <button onClick={() => setLangMode('ZH')} className={`flex-1 py-2 rounded-lg font-bold border ${langMode === 'ZH' ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-50'}`}>注音 (ZH)</button>
+                  <button onClick={() => setLangMode('EN')} className={`flex-1 py-2 rounded-lg font-bold border ${langMode === 'EN' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50'}`}>英文 (EN)</button>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <button onClick={handleCreateRoom} className="py-3 bg-indigo-600 text-white font-bold rounded-xl shadow">🏠 創建房間</button>
-                <button onClick={handleJoinRoom} className="py-3 bg-emerald-600 text-white font-bold rounded-xl shadow">🚪 加入房間</button>
+
+              <div className="flex gap-3 pt-4">
+                <button onClick={handleCreateRoom} className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow hover:bg-indigo-700 transition">創建房間</button>
+                <button onClick={handleJoinRoom} className="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl shadow hover:bg-emerald-700 transition">加入房間</button>
               </div>
-              <button onClick={() => setScreen('HOME')} className="w-full py-2 bg-slate-100 text-slate-600 font-bold rounded-lg mt-2">返回主頁</button>
             </div>
           )}
 
-          {/* 6. 多人房間 */}
+          {/* 6. 多人房間與對戰主畫面 */}
           {screen === 'MP_ROOM' && roomData && (
-            <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-5">
-              
+            <div className="w-full bg-white p-6 rounded-2xl shadow-xl space-y-6">
               <div className="flex justify-between items-center border-b pb-3">
                 <div>
-                  <span className="font-extrabold text-lg text-indigo-900">房號：{roomId}</span>
-                  <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
-                    {roomData.langMode === 'ZH' ? '注音' : '英文'} (目標:{roomData.settings?.winScore}分)
+                  <h2 className="text-xl font-extrabold text-slate-800">房間號碼：{roomId}</h2>
+                  <span className="text-xs bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded">
+                    {roomData.langMode === 'ZH' ? '注音拼音' : '英文 Alphabet'}
                   </span>
                 </div>
-                {playerId === roomData.ownerId && (
-                  <button onClick={handleDisbandRoom} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold hover:bg-red-200">解散房間</button>
-                )}
+                <button onClick={handleDisbandRoom} className="text-xs bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200">解散/離開</button>
               </div>
 
-              <div className="bg-slate-50 p-3 rounded-xl border">
-                <p className="text-xs font-bold text-slate-500 mb-2">🏆 記分板與狀態：</p>
-                <div className="space-y-1.5">
-                  {(roomData.playerOrder || []).map((pId) => {
-                    const pInfo = roomData.players[pId];
-                    if(!pInfo) return null;
-                    const isCurrentSetter = roomData.status === 'SETTING' && roomData.playerOrder[roomData.setterIndex] === pId;
-                    return (
-                      <div key={pId} className="flex justify-between items-center text-sm font-bold border-b border-slate-200 pb-1 last:border-0">
-                        <span className="text-slate-700 flex items-center gap-1">
-                          {pInfo.name} 
-                          {pId === roomData.ownerId && <span className="text-[10px] bg-amber-200 text-amber-800 px-1 rounded">房主</span>}
-                          {isCurrentSetter && <span className="text-[10px] bg-indigo-600 text-white px-1 rounded animate-pulse">出題中</span>}
-                        </span>
-                        <div className="flex gap-3">
-                          <span className="text-emerald-600">{pInfo.score} 分</span>
-                          <span className={pInfo.isReady ? "text-emerald-500" : "text-slate-300"}>{pInfo.isReady ? 'READY' : 'WAIT'}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 大廳等待 */}
+              {/* A. 房間大廳狀態 (LOBBY) */}
               {roomData.status === 'LOBBY' && (
-                <div className="flex flex-col gap-3">
-                  <p className="text-center text-sm font-bold text-slate-500">等待玩家準備...</p>
-                  <button onClick={toggleReady} className={`py-3 font-bold rounded-xl shadow text-white ${roomData.players[playerId]?.isReady ? 'bg-amber-500' : 'bg-emerald-600'}`}>
-                    {roomData.players[playerId]?.isReady ? '取消準備' : '✓ 準備就緒'}
-                  </button>
-                  {playerId === roomData.ownerId && allPlayersReady && (
-                    <button onClick={handleStartGame} className="py-3 bg-indigo-600 text-white font-bold rounded-xl shadow animate-bounce">🚀 開始遊戲！</button>
-                  )}
+                <div className="space-y-4">
+                  {/* 設定選項區塊 (房主可調整) */}
+                  <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 space-y-3">
+                    <h3 className="font-bold text-amber-900 text-sm flex items-center gap-1">⚙️ 房間規則設定 {playerId !== roomData.ownerId && '(房主可調整)'}</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">出題時間限制：</label>
+                        <select 
+                          disabled={playerId !== roomData.ownerId}
+                          value={roomData.settings?.timeLimit || 30} 
+                          onChange={e => handleUpdateSettings('timeLimit', e.target.value)}
+                          className="w-full p-2 border rounded-lg bg-white font-bold text-sm"
+                        >
+                          <option value={15}>15 秒</option>
+                          <option value={30}>30 秒</option>
+                          <option value={45}>45 秒</option>
+                          <option value={60}>60 秒</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">獲勝分數目標：</label>
+                        <select 
+                          disabled={playerId !== roomData.ownerId}
+                          value={roomData.settings?.winScore || 5} 
+                          onChange={e => handleUpdateSettings('winScore', e.target.value)}
+                          className="w-full p-2 border rounded-lg bg-white font-bold text-sm"
+                        >
+                          <option value={3}>3 分</option>
+                          <option value={5}>5 分</option>
+                          <option value={10}>10 分</option>
+                          <option value={15}>15 分</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="font-bold text-slate-700 text-sm">玩家列表：</h3>
+                    {roomData.playerOrder.map(pid => {
+                      const p = roomData.players[pid];
+                      const isOwner = pid === roomData.ownerId;
+                      return (
+                        <div key={pid} className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border">
+                          <span className="font-bold">{p.name} {isOwner && '👑 (房主)'}</span>
+                          <span className={`text-xs px-2 py-1 rounded font-bold ${p.isReady ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
+                            {p.isReady ? '已準備' : '未準備'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="pt-2 flex gap-3">
+                    <button onClick={toggleReady} className="flex-1 py-3 bg-slate-200 font-bold rounded-xl text-slate-700 hover:bg-slate-300">
+                      {roomData.players?.[playerId]?.isReady ? '取消準備' : '點擊準備'}
+                    </button>
+                    {playerId === roomData.ownerId && (
+                      <button disabled={!allPlayersReady} onClick={handleStartGame} className={`flex-1 py-3 font-bold rounded-xl text-white ${allPlayersReady ? 'bg-emerald-600 hover:bg-emerald-700 shadow' : 'bg-slate-300'}`}>
+                        開始遊戲
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* 出題階段 */}
+              {/* B. 出題階段 (SETTING) */}
               {roomData.status === 'SETTING' && (
-                <div className="text-center space-y-4">
-                  <div className="flex justify-center mb-2"><div className="w-16 h-16 rounded-full border-4 border-indigo-200 border-t-indigo-600 animate-spin flex items-center justify-center font-bold text-indigo-700">{timeLeft}s</div></div>
-                  {roomData.playerOrder[roomData.setterIndex] === playerId ? (
-                    <div className="space-y-3 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-                      <p className="font-bold text-indigo-900">輪到您出題！</p>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center bg-amber-100 p-3 rounded-xl">
+                    <span className="font-bold text-amber-900">
+                      輪到 【{roomData.players[roomData.playerOrder[roomData.setterIndex]]?.name}】 出題
+                    </span>
+                    <span className="font-extrabold text-red-600">⏳ 剩餘 {timeLeft} 秒</span>
+                  </div>
+
+                  {playerId === roomData.playerOrder[roomData.setterIndex] ? (
+                    <div className="bg-slate-50 p-4 rounded-xl border space-y-3">
+                      <h3 className="font-bold text-slate-800">請輸入您要出題的內容：</h3>
                       <input 
                         type="text" 
-                        placeholder={roomData.langMode === 'ZH' ? "輸入出題字 (例如: 蘋果)" : "輸入英文單字/片語 (可含空白)"}
-                        value={mpWordText}
-                        onChange={(e) => {
+                        placeholder="請輸入國字/單字 (例如: 柑仔店)" 
+                        value={mpWordText} 
+                        onChange={e => {
                           const val = e.target.value;
                           setMpWordText(val);
-                          if(roomData.langMode === 'ZH') setMpWordTarget(autoConvertZhuyin(val));
-                          else setMpWordTarget(val.toUpperCase());
+                          if (roomData.langMode === 'ZH') {
+                            setMpWordTarget(autoConvertZhuyin(val));
+                          } else {
+                            setMpWordTarget(val.toUpperCase());
+                          }
                         }}
-                        className="w-full p-2.5 border rounded-lg font-bold text-center"
+                        className="w-full p-2 border rounded-lg font-bold" 
                       />
                       <input 
                         type="text" 
-                        placeholder={roomData.langMode === 'ZH' ? "注音 (若未自動轉換請手動輸入)" : "目標解答"}
-                        value={mpWordTarget}
-                        onChange={(e) => setMpWordTarget(e.target.value.toUpperCase())}
-                        className="w-full p-2.5 border rounded-lg font-bold text-center bg-white text-indigo-700"
+                        placeholder="解答格式 (例如: ㄍㄢ ㄗㄞˇ ㄉㄧㄢˋ)" 
+                        value={mpWordTarget} 
+                        onChange={e => setMpWordTarget(e.target.value)} 
+                        className="w-full p-2 border rounded-lg font-mono text-sm" 
                       />
-                      <button onClick={handleSubmitMpWord} className="w-full py-2 bg-indigo-600 text-white font-bold rounded-lg shadow">送出題目</button>
+                      <p className="text-xs text-slate-500">*系統已自動將一聲符號過濾清洗，確保無點擊衝突。</p>
+                      <button onClick={handleSubmitMpWord} className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow hover:bg-indigo-700 transition">
+                        出題並開始計分
+                      </button>
                     </div>
                   ) : (
-                    <p className="font-bold text-slate-500 animate-pulse">等待 <span className="text-indigo-600">{roomData.players[roomData.playerOrder[roomData.setterIndex]]?.name}</span> 出題中...</p>
+                    <div className="text-center py-8 bg-slate-50 rounded-xl border">
+                      <p className="font-bold text-slate-600">正在等待出題者思考題目，請做好準備...</p>
+                    </div>
                   )}
                 </div>
               )}
 
-              {/* 遊戲階段 */}
+              {/* C. 進行猜字對戰 (PLAYING) */}
               {roomData.status === 'PLAYING' && (
-                <div className="flex flex-col items-center space-y-4 relative">
-                  <div className="bg-amber-50 p-2 rounded-xl border border-amber-200"><canvas ref={canvasRef} width={200} height={180} /></div>
-                  <div className="flex gap-1 flex-wrap justify-center py-2 w-full max-w-full overflow-hidden">
-                    {renderWordSpaces(roomData.wordTarget, new Set(roomData.guessed || []), false)}
+                <div className="flex flex-col items-center space-y-4">
+                  {/* 計分板 */}
+                  <div className="w-full grid grid-cols-2 sm:grid-cols-4 gap-2 text-center bg-slate-50 p-3 rounded-xl border">
+                    {roomData.playerOrder.map(pid => (
+                      <div key={pid} className={`p-1.5 rounded-lg ${pid === roomData.playerOrder[roomData.setterIndex] ? 'bg-amber-100 border border-amber-300' : ''}`}>
+                        <div className="text-xs text-slate-500 font-bold">{roomData.players[pid]?.name}</div>
+                        <div className="text-lg font-extrabold text-amber-800">{roomData.players[pid]?.score || 0} 分</div>
+                      </div>
+                    ))}
                   </div>
-                  {playerId === roomData.playerOrder[roomData.setterIndex] ? (
-                    <p className="text-sm font-bold text-indigo-600 mb-2">您是出題者，觀察大家猜題吧！(題目: {roomData.wordText})</p>
-                  ) : (
-                    <div className="grid grid-cols-7 sm:grid-cols-9 gap-1.5 w-full mt-2">
-                      {keys.map(char => {
-                        const isGuessed = (roomData.guessed || []).includes(char);
-                        return (
-                          <button key={char} disabled={isGuessed || roomData.wrongCount >= MAX_WRONG} onClick={() => handleMpGuess(char)} 
-                            className={`py-2 text-sm sm:text-base font-bold rounded-lg transition ${isGuessed ? 'bg-slate-200 text-slate-400' : 'bg-amber-100 hover:bg-amber-300 active:bg-amber-400'}`}>
-                            {char}
-                          </button>
-                        );
-                      })}
-                    </div>
+
+                  <canvas ref={canvasRef} width="180" height="180" className="bg-amber-50 rounded-xl border" />
+
+                  <div className="text-center font-extrabold text-2xl text-amber-800 tracking-widest">
+                    {roomData.wordText}
+                  </div>
+
+                  <div className="flex flex-wrap justify-center gap-1 sm:gap-2 my-1">
+                    {renderWordSpaces(roomData.wordTarget, roomData.guessed || [], roomData.wrongCount >= MAX_WRONG)}
+                  </div>
+
+                  {/* 鍵盤 */}
+                  <div className="flex flex-wrap justify-center gap-1.5 max-w-lg mt-2">
+                    {keys.map(k => {
+                      const isGuessed = roomData.guessed?.includes(k);
+                      const isSetter = playerId === roomData.playerOrder[roomData.setterIndex];
+                      return (
+                        <button
+                          key={k}
+                          disabled={isGuessed || isSetter || roomData.wrongCount >= MAX_WRONG}
+                          onClick={() => handleMpGuess(k)}
+                          className={`w-9 h-11 sm:w-10 sm:h-12 rounded-lg font-bold text-lg shadow-sm transition ${
+                            isGuessed ? 'bg-slate-200 text-slate-400 border' : 'bg-amber-100 hover:bg-amber-200 text-amber-900'
+                          }`}
+                        >
+                          {k}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {playerId === roomData.playerOrder[roomData.setterIndex] && (
+                    <p className="text-xs text-amber-700 font-bold">👀 您是本局出題者，正在觀戰其他玩家猜字中...</p>
                   )}
                 </div>
               )}
 
-              {/* 遊戲結束結算 */}
+              {/* D. 遊戲結束畫面 (GAME_OVER) */}
               {roomData.status === 'GAME_OVER' && (
-                <div className="text-center space-y-4 py-4">
-                  <h3 className="text-2xl font-extrabold text-indigo-700">🏆 遊戲結束！</h3>
-                  <div className="flex justify-center"><button onClick={() => setShowReview(!showReview)} className="text-sm text-slate-500 underline">查看歷史題目紀錄</button></div>
-                  {showReview && roomData.wordHistory && (
-                    <div className="bg-slate-50 p-3 rounded-lg text-xs text-left max-h-40 overflow-auto border">
-                      {roomData.wordHistory.map((h, i) => (
-                        <p key={i} className="mb-1"><span className="font-bold text-indigo-600">[{h.setter}]</span> 出題 <span className="font-bold text-slate-700">"{h.word}"</span> ({h.target}) - <span className="text-emerald-600">{h.status} ({h.winner})</span></p>
+                <div className="text-center bg-amber-50 p-6 rounded-2xl border-2 border-amber-300 space-y-4">
+                  <h2 className="text-2xl font-extrabold text-amber-900">🎉 遊戲結束！最終優勝誕生！</h2>
+                  
+                  {/* 結算排行榜 */}
+                  <div className="bg-white p-4 rounded-xl border max-w-md mx-auto space-y-2">
+                    <h3 className="font-bold text-slate-700 text-sm mb-2 border-b pb-1">🏆 最終積分結算榜</h3>
+                    {roomData.playerOrder
+                      .map(pid => roomData.players[pid])
+                      .sort((a, b) => (b.score || 0) - (a.score || 0))
+                      .map((p, idx) => (
+                        <div key={idx} className="flex justify-between items-center py-1 border-b last:border-none">
+                          <span className="font-bold">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'} {p.name}</span>
+                          <span className="font-extrabold text-amber-700">{p.score || 0} 分</span>
+                        </div>
                       ))}
+                  </div>
+
+                  {/* 歷史紀錄與回顧按鈕 */}
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2 justify-center">
+                    <button 
+                      onClick={() => setShowReview(!showReview)} 
+                      className="px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl shadow hover:bg-indigo-700 transition"
+                    >
+                      📜 {showReview ? '隱藏歷史題目' : '查看歷史題目回顧'}
+                    </button>
+                    <button 
+                      onClick={handleBackToLobby} 
+                      className="px-5 py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow hover:bg-emerald-700 transition"
+                    >
+                      🔄 回到房間 (準備下一局)
+                    </button>
+                  </div>
+
+                  {/* 展開歷史題目列表 */}
+                  {showReview && (
+                    <div className="bg-white p-4 rounded-xl border text-left space-y-2 max-h-60 overflow-y-auto">
+                      <h4 className="font-bold text-slate-800 text-sm border-b pb-1">📜 本局歷史出題紀錄：</h4>
+                      {roomData.wordHistory && roomData.wordHistory.length > 0 ? (
+                        roomData.wordHistory.map((h, i) => (
+                          <div key={i} className="text-xs bg-slate-50 p-2 rounded border space-y-0.5">
+                            <div className="font-bold text-slate-700">第 {i + 1} 題: {h.word} ({h.target})</div>
+                            <div className="text-slate-500">出題者: {h.setter} | 得分者: {h.winner} ({h.status})</div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-slate-400">尚無出題紀錄</p>
+                      )}
                     </div>
-                  )}
-                  {playerId === roomData.ownerId && (
-                    <button onClick={() => firebase.database().ref('rooms/' + roomId).update({ status: 'LOBBY' })} className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow">🔄 返回大廳重新開始</button>
                   )}
                 </div>
               )}
             </div>
           )}
-
         </div>
       );
     }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<HangmanGame />);
+    ReactDOM.createRoot(document.getElementById('root')).render(<HangmanGame />);
   </script>
 </body>
 </html>
