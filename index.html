@@ -127,6 +127,19 @@
         if (screen === 'MP_ROOM' && roomData && (roomData.status === 'PLAYING' || roomData.status === 'GAME_OVER')) drawHangman(roomData.wrongCount || 0);
       }, [spWrong, roomData?.wrongCount, roomData?.status, screen, drawHangman]);
 
+      // 處理視窗關閉或重新整理自動退出
+      useEffect(() => {
+        const handleBeforeUnload = () => {
+          if (roomId && playerId) {
+            firebase.database().ref(`rooms/${roomId}/players/${playerId}`).remove();
+          }
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => {
+          window.removeEventListener('beforeunload', handleBeforeUnload);
+        };
+      }, [roomId, playerId]);
+
       // 多人模式：監聽房間資料變化
       useEffect(() => {
         if (!roomId) return;
@@ -137,10 +150,28 @@
             // 檢查是否被踢出或主動離開
             if (screen === 'MP_ROOM' && data.players && !data.players[playerId]) {
               alert('您已退出或被踢出房間。');
+              firebase.database().ref(`rooms/${roomId}/players/${playerId}`).onDisconnect().cancel();
               setScreen('HOME');
               setRoomId('');
               setRoomData(null);
             } else {
+              // 檢查是否需要自動移交房主 (房主意外斷線)
+              if (data.players && data.ownerId && !data.players[data.ownerId]) {
+                const validPlayers = data.playerOrder ? data.playerOrder.filter(id => data.players[id]) : [];
+                if (validPlayers.length > 0) {
+                  const nextOwnerId = validPlayers[0];
+                  // 只有第一順位的人來執行寫入，避免多人同時寫入衝突
+                  if (playerId === nextOwnerId) {
+                    const updates = {};
+                    updates[`rooms/${roomId}/ownerId`] = nextOwnerId;
+                    updates[`rooms/${roomId}/playerOrder`] = validPlayers;
+                    if (data.setterIndex >= validPlayers.length) {
+                      updates[`rooms/${roomId}/setterIndex`] = 0;
+                    }
+                    firebase.database().ref().update(updates);
+                  }
+                }
+              }
               setRoomData(data);
             }
           } else {
@@ -288,6 +319,7 @@
           settings: { timeLimit: 30, winScore: 5 },
           players: { [pId]: { name: name, isReady: true, score: 0 } }
         }).then(() => {
+          firebase.database().ref(`rooms/${rId}/players/${pId}`).onDisconnect().remove();
           setScreen('MP_ROOM'); setShowReview(false);
         });
       }
@@ -324,6 +356,7 @@
             updates[`rooms/${rId}/lastActivity`] = Date.now(); // 更新活動時間
             
             firebase.database().ref().update(updates).then(() => {
+              firebase.database().ref(`rooms/${rId}/players/${pId}`).onDisconnect().remove();
               setScreen('MP_ROOM'); setShowReview(false);
             });
           }
@@ -370,8 +403,14 @@
           updates[`rooms/${roomId}/setterIndex`] = 0;
         }
 
+        // 手動退出時，若離開者是房主，自動移交給下一順位
+        if (targetPid === roomData.ownerId && newOrder.length > 0) {
+          updates[`rooms/${roomId}/ownerId`] = newOrder[0];
+        }
+
         firebase.database().ref().update(updates).then(() => {
           if (isMe) {
+            firebase.database().ref(`rooms/${roomId}/players/${playerId}`).onDisconnect().cancel();
             setScreen('HOME');
             setRoomId('');
             setRoomData(null);
